@@ -43,7 +43,7 @@ void RestoreReferenceImage(void);
 void DrawCircle (short x0, short y0, short r, unsigned short colour);
 void DrawRectangle(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour);
 void DrawLine(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour);
-void SetPixel(unsigned short xpos, unsigned short ypos, unsigned short colour);
+void SetPixel(short xpos, short ypos, unsigned short colour);
 
 
 // update the screen with the changes to the renderspace

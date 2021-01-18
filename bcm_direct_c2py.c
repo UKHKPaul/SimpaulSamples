@@ -128,15 +128,18 @@ void exitBCMHardware(void)
 // the code is based on a sample found online which has a number of undocumented settings
 // where page numbers and details are given the information has been taken from the GalaxyCore GC9A01 Rev1.0 datasheet
 // see the Simpaul.com web page for download/link
+// note I have commented out as many of the undocumented commands as I can and most seem to ahve no effect on the output
+// however the 0x66 and 0x67 commands certainly do affect the output
 void initCircularDisp(void)
 {
 
+    // create some memory space for a render buffer
+    // this is used to allow multiple display changes to be done without having multiple screen updates
+    // this means the updated image can be created and then sent to the display in one update
+    // this gives a much smoother output without obvious on screen drawing. 
     RenderSpace = (unsigned short *) malloc (240*240*2);
     if (RenderSpace ==NULL)
         printf("ERROR - RenderSpace was not created\n");
-    //else
-    //    printf("renderspace was created\n");
-    //printf("renderspace = %p\n",RenderSpace);
 
     //sdoCmdU8(0xEB);    //*** not listed
     //sdoDataU8(0x14);
@@ -383,7 +386,7 @@ void initCircularDisp(void)
 
     sdoCmdU8(0x21);    //  Invert screen colours
 
-    sdoCmdU8(0x11);    //Sleep Out Mode P103   - turns off sleep mode
+    sdoCmdU8(0x11);    //Sleep Out Mode P103   - turns off sleep mode - i.e. turn on the screen
     bcm2835_delay(120);
     sdoCmdU8(0x29);    //Display On P 110
     bcm2835_delay(20);
@@ -393,6 +396,7 @@ void initCircularDisp(void)
 }
 
 // low level driver using SPI direct to write 8 bit value out as a command
+// as it's a command, make sure to set the D/C pin low = Command
 void sdoCmdU8( unsigned char byteval)
 {
     bcm2835_gpio_write(CIR_DC, LOW);    
@@ -400,6 +404,7 @@ void sdoCmdU8( unsigned char byteval)
 }
 
 // low level driver using SPI direct to write 16 bit value out as Data
+// as it's a data, make sure to set the D/C pin high = data
 void sdoDataU16( unsigned short intval)
 {
     bcm2835_gpio_write(CIR_DC, HIGH);    
@@ -407,6 +412,7 @@ void sdoDataU16( unsigned short intval)
     bcm2835_spi_transfer(intval&0xff);
 }
 // low level driver using SPI direct to write 8 bit value out as Data
+// as it's a data, make sure to set the D/C pin high = data
 void sdoDataU8( unsigned char byteval)
 {
     bcm2835_gpio_write(CIR_DC, HIGH);    
@@ -459,13 +465,15 @@ void RGB240x240Direct(unsigned char * rawdata,bool update  )
   {
     //printf("valid file format\n");
     
-    counter = rawdata + 54;
+    counter = rawdata + 54; //  skip past the headers
+    //note BMP has 1st pixel as lower left which is the line 239 on the display
     for (short y=240;y>0;y--)
     {
       offset = (y-1)*240;
       for (short x=0; x<240;x++)
       {
         colour  = RGBto16bit(*(counter+2), *(counter+1), *(counter));
+        // BMP has colour with Green first, then Blue then Red
         RenderSpace[x+offset]=colour;
        
         counter=counter+3;
@@ -477,24 +485,26 @@ void RGB240x240Direct(unsigned char * rawdata,bool update  )
 }
 
 // makes a copy of the render space to a buffer
+// only created the reference image space if this is used 
+// as most time the python code would not need it
 void SetRefernceImage(void)
 {
-    if (RenderSpace !=NULL)
+    if(ReferenceSpace ==NULL)
     {
+        ReferenceSpace = (unsigned short *)malloc(240*240*2);
         if(ReferenceSpace ==NULL)
         {
-            ReferenceSpace = (unsigned short *)malloc(240*240*2);
-            if(ReferenceSpace ==NULL)
-            {
-                printf("Error unable to create reference space\n");
-            }
-            else
-            {
-                memcpy(ReferenceSpace,RenderSpace,240*240*2);
-            }
+            printf("Error unable to create reference space\n");
         }
     }
+         
+    if ((RenderSpace !=NULL) && (ReferenceSpace !=NULL))
+    {
+        memcpy(ReferenceSpace,RenderSpace,240*240*2);
+    }
 }
+
+
 //restore the reference to the render space
 void RestoreReferenceImage(void)
 {
@@ -511,6 +521,7 @@ void RestoreReferenceImage(void)
 // define the start and end pixels to be updated
 // note these are inclusive values
 // i.e. writing will be from Xstart up to and including Xend and same for the Y axis
+// hence full screen is 0,0 to 239,239
 void SetScreenWriteArea(unsigned char Xstart,unsigned char Ystart,unsigned char Xend,unsigned char Yend)
 {
     if((Xend<240) && (Yend<240) &&(Xstart<=Xend)&& (Ystart<=Yend))
@@ -562,30 +573,15 @@ void  SetPixelDirect(unsigned short xpos, unsigned short ypos, unsigned short co
 
 
 // SetPixel
-// individual pixel setting, this is direct and updates the screen immediatle
-// use this for updating direct to the screen (use for small changes)
-// work on the Render space and do screen update for large changes
-void  SetPixel(unsigned short xpos, unsigned short ypos, unsigned short colour)
-{
-    if((xpos>239) || (ypos>239))
-        printf("SetPixel writing to invalid\n");
-    else
-        RenderSpace[(xpos)+(ypos)*240]=colour;
-    
-}
-
-// safeupdate
 // updates a pixel in the renderspace with checking to make sure the co-ordinates are valid
 // this prevents screen wrap round or invalid memory access
-void safeupdate(short x, short y, unsigned short colour)
+void SetPixel(short xpos, short ypos, unsigned short colour)
 {
-    if((x>=0)&&(x<240)&&(y>=0)&&(y<240))
-        RenderSpace[x+y*240]=colour;
+    if((xpos>=0)&&(xpos<240)&&(ypos>=0)&&(ypos<240))
+        RenderSpace[xpos+ypos*240]=colour;
     else
         printf("trying to write outside screen\n");
 }
-
-
 
 
 // DrawCircle
@@ -596,21 +592,21 @@ void safeupdate(short x, short y, unsigned short colour)
 // note use of shorts for x,y to allow for circle origins outside of the screen 
 void DrawCircle (short x0, short y0, short r, unsigned short colour)
 {
-  int a=0;
-  int b=r;     
-  while(a<=b)
-  {
-    safeupdate((x0-b),(y0-a),colour);
-    safeupdate((x0+b),(y0-a),colour);                   
-    safeupdate((x0-a),(y0+b),colour);                         
-    safeupdate((x0-a),(y0-b),colour);           
-    safeupdate((x0+b),(y0+a),colour);                        
-    safeupdate((x0+a),(y0-b),colour);      
-    safeupdate((x0+a),(y0+b),colour);         
-    safeupdate((x0-b),(y0+a),colour);
-    a+=1;
-    if((a*a+b*b)>(r*r))
-      b-=1;
+int a=0;
+int b=r;     
+    while(a<=b)
+    {
+        SetPixel((x0-b),(y0-a),colour);
+        SetPixel((x0+b),(y0-a),colour);                   
+        SetPixel((x0-a),(y0+b),colour);                         
+        SetPixel((x0-a),(y0-b),colour);           
+        SetPixel((x0+b),(y0+a),colour);                        
+        SetPixel((x0+a),(y0-b),colour);      
+        SetPixel((x0+a),(y0+b),colour);         
+        SetPixel((x0-b),(y0+a),colour);
+        a+=1;
+        if((a*a+b*b)>(r*r))
+            b-=1;
     }
 }
 
@@ -671,7 +667,7 @@ void DrawLine(short Xstart,short Ystart, short Xend, short Yend, unsigned short 
         distance=delta_y;
     for (int t=0;t<=(distance+1);t++)
     {
-        safeupdate(uRow,uCol,colour);
+        SetPixel(uRow,uCol,colour);
         Xerr+=delta_x;
         Yerr+=delta_y;
         if(Xerr>distance)
@@ -708,76 +704,10 @@ void ScreenUpdate(void)
     }
 }
 
-
+// convert a 8 byte set of R G B values into the 16 bit combined 5 Red 6 Green and 5 Blue 
+// patten that is used by the display chip
 unsigned short RGBto16bit(unsigned char Red, unsigned char Green, unsigned char Blue)
 {
     return ( ((Red>>3)<<11) | ((Green>>2)<<5) | (Blue>>3));
-}
-
-
-/*
-void test(void)
-{
-     // If you call this, it will not actually access the GPIO
-// Use for testing
-//        bcm2835_set_debug(1);
-
-    if (!bcm2835_init())
-    {
-      printf("bcm2835_init failed. Are you running as root??\n");
-      //return 1;
-    }
-
-    if (!bcm2835_spi_begin())
-    {
-      printf("bcm2835_spi_begin failed. Are you running as root??\n");
-      return ;
-    }
-
-    bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      // The default
-    bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);                   // The default
-    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_4);     // about 32Mhz
-    bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      // The default
-    bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      // the default
-
-
-    // setup the DC and RES pins  
-    bcm2835_gpio_fsel(CIR_RES, BCM2835_GPIO_FSEL_OUTP);
-    bcm2835_gpio_fsel(CIR_DC, BCM2835_GPIO_FSEL_OUTP);
-
-    bcm2835_gpio_write(CIR_RES, LOW);    //reset the chip
-    bcm2835_gpio_write(CIR_DC, HIGH); 
-
-    bcm2835_delay(200);
-    
-    bcm2835_gpio_write(CIR_RES, HIGH);    // release the reset to the chip
-    bcm2835_delay(200);
-    
-
-
-    initCircularDisp();
-    for (int y =0;y<10;y++)
-    {    
-        clearScreen(0xffff);
-        clearScreen(0x0000);
-        clearScreen(0x7BDF);   //Mid grey
-        clearScreen(0xf800);   //Red
-        clearScreen(0x07E0);   //green
-        clearScreen(0x001F);   //blue
-    }
-    bcm2835_delay( 10);
-
-    bcm2835_spi_end();
-    bcm2835_close();
-    
-}
-
-*/
-void testbytes(unsigned char * rawdata)
-{
-    for (int x=0;x<54;x++)
-    {
-        printf("byte %d is %d\n",x,rawdata[x]);
-    }
 }
 
