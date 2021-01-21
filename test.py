@@ -46,82 +46,66 @@ if (circularDisp.initBCMHardware()):
   circularDisp.initCircularDisp()
 
   # clear the screen with a full screen solid colour
-  circularDisp.clearScreenDirect(0x07E0)    # this is green
+  circularDisp.clearScreenDirect(0x0000)    # this is green
 
-
-  # some timing to see how fast it can work
-  now = datetime.datetime.now()
-  print("Circle calc start: ")
-  print(str(now))
-
-  # draw 100 circles using python code
-  for radius in range(100):
-  	DrawCirclePython(120,120,radius+10,radius<<5)
+  # select which test to run
+  test =2
   
   # some timing to see how fast it can work
+  starttime = datetime.datetime.now()
+
+  if(test==1):
+
+    # do the AA line testing
+    for centre in range (10):
+      for radius in range(240):
+        circularDisp.DrawLineIntMaths(12*centre,12*centre,radius,0,radius<<11)
+        circularDisp.DrawLineIntMaths(12*centre,12*centre,0,radius,(radius<<5)&0x07E0)
+        circularDisp.DrawLineIntMaths(12*centre,12*centre,radius,239,radius&0x1F)
+        circularDisp.DrawLineIntMaths(12*centre,12*centre,239,radius,0xffff>>centre)
+      #circularDisp.ScreenUpdate()
+
+
+  if(test==2):
+
+    # do the AA line testing
+    for centre in range (10):
+      for radius in range(240):
+        circularDisp.DrawLineAA(12*centre,12*centre,radius,0,radius<<11)
+        circularDisp.DrawLineAA(12*centre,12*centre,0,radius,(radius<<5)&0x07E0)
+        circularDisp.DrawLineAA(12*centre,12*centre,radius,239,radius&0x1F)
+        circularDisp.DrawLineAA(12*centre,12*centre,239,radius,0xffff>>centre)
+      #circularDisp.ScreenUpdate()
+
+  if(test==3):
+
+    # do the wide line testing
+    for centre in range (10):
+      for radius in range(240):
+        circularDisp.DrawLineWideAA(12*centre,12*centre,radius,0,radius<<11,10)
+        circularDisp.DrawLineWideAA(12*centre,12*centre,0,radius,(radius<<5)&0x07E0,10)
+        circularDisp.DrawLineWideAA(12*centre,12*centre,radius,239,radius&0x1F,10)
+        circularDisp.DrawLineWideAA(12*centre,12*centre,239,radius,0xffff>>centre,10)
+      #circularDisp.ScreenUpdate()
+      
+  if (test ==0):
+    circularDisp.DrawLineAA(120,120,239,120,0xFFFF)
+    circularDisp.DrawLineAA(120,120,0,120,0xFFFF)
+    circularDisp.DrawLineAA(120,120,120,0,0xFFFF)
+    circularDisp.DrawLineAA(120,120,120,239,0xFFFF)
+
+    circularDisp.DrawLineAA(110,120,239,120,0xFFFF)
+    circularDisp.DrawLineAA(110,120,-1,120,0xf800)
+    circularDisp.DrawLineAA(110,120,120,-1,0x07E0)
+    circularDisp.DrawLineAA(110,120,120,239,0x07E0)
+
+
+  # some timing to see how fast it can work
   now = datetime.datetime.now()
-  print("Circle calc End: ")
-  print(str(now))
+  print("lines time End: ")
+  print(str(now-starttime))
 
-  # now do a number of circles direct using the C library
-  for offset in range(10):
-    for radius in range(100):
-      circularDisp.DrawCircle(120,120,radius+10,radius<<offset)
-    # only update the screen after each 100 circles are drawn  
-    circularDisp.ScreenUpdate()
-
-
-  #  for offset in range(10):
-  #    for radius in range(200):
-  #      circularDisp.DrawCircle(radius,radius,radius+10,radius<<offset)
-  #      if(radius&0x0f==0):
-  #        circularDisp.ScreenUpdate()
-
-
-  # a few simple line drawing
-  for pos in range(0,240):
-    circularDisp.DrawLine(pos,0,0,240-pos,pos)
-    if(pos&0x07==0):
-      # only do screen update every 8th line
-      circularDisp.ScreenUpdate()
-
-  # a rectange test
-  for pos in range(0,71):
-    circularDisp.DrawRectangle(pos+50,pos+50,190-pos,190-pos,pos)
-    if(pos&0x07==0):
-      # only do screen update every 8th line
-      circularDisp.ScreenUpdate()
-
-  # anotehr update just to make sure everything is updated on screen
   circularDisp.ScreenUpdate()
-
-  # now lets try a bitmap
-  file = open("./book240x240x24.bmp","rb")
-
-  data = file.read()
-
-  # this code does the bitmap image but with the decoding and individual bit setting done in python
-  # it's slower but could be useful if you want to try some other formats
-  #
-  #  if ((data[10]!=54) or (data[14]!=40) or (data[18]!=240) or (data[22]!=240) or (data[19]!=0) or (data[23]!=0) or (data[28]!=24)):
-  #    print("not a 240x240 image")
-  #  else:
-  #    print("valid file format")
-  #    counter = 54
-  #    for y in range (0,240):
-  #      for x in range( 0,240):
-  #        colour  = circularDisp.RGBto16bit(data[counter+2],data[counter+1],data[counter]);
-  #        circularDisp.SetPixel(x,239-y,colour)
-  #        counter=counter+3
-  #    circularDisp.ScreenUpdate()
-
-  file.close()
-
-  # Clear the screen again this time RED
-  circularDisp.clearScreenDirect(0xF800)
-
-  # now do a screen update with the BMP data and display it
-  circularDisp.RGB240x240Direct(data,1)
 
 
   circularDisp.exitBCMHardware()

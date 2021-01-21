@@ -37,14 +37,27 @@ void SetRefernceImage(void);
 void RestoreReferenceImage(void);
 
 
-
 // offline (to render space) graphics commands
 // co-ordinates can be on or off screen and the visible parts will still be shown
 void DrawCircle (short x0, short y0, short r, unsigned short colour);
 void DrawRectangle(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour);
-void DrawLine(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour);
+
+
 void SetPixel(short xpos, short ypos, unsigned short colour);
 
+
+// two line drawing routines, the first is for integer maths but give jagged lines
+// the second uses anti-aliasing for smooth edges, but at the expense of speed
+
+void DrawLineIntMaths (short Xstart,short Ystart, short Xend, short Yend, unsigned short colour);
+void DrawLineAA       (short x0,short y0, short x1, short y1, unsigned short colour);
+
+// this is the actual routine, but passing floats seems to have complications in Python so, best to use the above.
+void DrawLineFloat    (float Xstart,float Ystart, float Xend, float Yend, unsigned short colour,bool fill);
+
+//wide line drawing routines, the first being used by Python and the second the actual routine
+void DrawLineWideAA(short x0,short y0, short x1, short y1, unsigned short colour,unsigned short width);
+void DrawLineWideFloat(float x0,float y0, float x1, float y1, unsigned short colour,unsigned short width);
 
 // update the screen with the changes to the renderspace
 void ScreenUpdate(void);
@@ -61,7 +74,4 @@ void SetScreenWriteArea(unsigned char Xstart,unsigned char Ystart,unsigned char 
 void sdoCmdU8( unsigned char byteval);
 void sdoDataU16( unsigned short intval);
 void sdoDataU8( unsigned char byteval);
-
-
-void testbytes(unsigned char * rawdata);
 

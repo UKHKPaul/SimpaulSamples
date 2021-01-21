@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdbool.h> 
 #include <string.h>
+#include <math.h>
 #include "bcm_direct_c2py.h"
 
 // pin numbers are hte BCM values
@@ -579,8 +580,8 @@ void SetPixel(short xpos, short ypos, unsigned short colour)
 {
     if((xpos>=0)&&(xpos<240)&&(ypos>=0)&&(ypos<240))
         RenderSpace[xpos+ypos*240]=colour;
-    else
-        printf("trying to write outside screen\n");
+   // else
+   //     printf("trying to write outside screen\n");
 }
 
 
@@ -616,72 +617,432 @@ int b=r;
 void DrawRectangle(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour)
 {
 
-    // first the two horrizonal lines
-    DrawLine(Xstart,Ystart,Xend,Ystart,colour);
-    DrawLine(Xstart,Yend,Xend,Yend,colour);
-    // then the two vertical ones
-    DrawLine(Xstart,Ystart,Xstart,Yend,colour);
-    DrawLine(Xend,Ystart,Xend,Yend,colour);
+    // note we can use integer maths routines here as the lines are by defintion horizontal or vertical.
 
+    // first the two horrizonal lines
+    DrawLineIntMaths(Xstart,Ystart,Xend,Ystart,colour);
+    DrawLineIntMaths(Xstart,Yend,Xend,Yend,colour);
+    // then the two vertical ones
+    DrawLineIntMaths(Xstart,Ystart,Xstart,Yend,colour);
+    DrawLineIntMaths(Xend,Ystart,Xend,Yend,colour);
+
+}
+
+
+// pixel mixing, used to do the anti-alising on the lines.
+// note the intensity is a short with 256 being eqivalent to 100% intensity
+void updatePixel(short x, short y, unsigned short colour, unsigned short intensity)
+{
+short current;
+short red0,green0,blue0;
+short red1,green1,blue1;
+unsigned short oldintensity;
+    // check it's valid space
+    if( (x>=0)&&(x<240)&&(y>=0)&&(y<240))     
+    {
+        if (intensity>245)  // if more than 95% just assume 100%
+        {
+            RenderSpace[x+y*240]=colour;
+        }
+        else
+        {
+            // work out the reletive intesities of red green and blue from the old and new pixels.
+            oldintensity = 256 - intensity;
+
+            //printf("new,old  intensity is %d     %d\n",newintensity,oldintensity);
+
+            current = RenderSpace[x+y*240];
+
+            red0 =   (current&0xf800)>>11;
+            green0 = (current&0x07E0)>>5;
+            blue0 =  (current&0x001F);
+
+            // update the colour but only if different
+            red1 = (colour&0xf800)>>11;
+            green1 = (colour&0x07E0)>>5;
+            blue1 = (colour&0x001F);
+
+            //mix them
+            red0 =   ((red1   * intensity) + (red0   * oldintensity) +128)>>8;
+            if (red0>0x1F)
+                red0 = 0x1F;
+            green0 = ((green1 * intensity) + (green0 * oldintensity) +128)>>8;
+            if (green0>0x3F)
+                green0 = 0x3F;
+            blue0 =  ((blue1  * intensity) + (blue0  * oldintensity) +128)>>8;
+            if (blue0>0x1F)
+                blue0 = 0x1F;
+            //write it back
+
+            RenderSpace[x+y*240]=(red0<<11)+(green0<<5)+(blue0);
+        }
+    }
+}
+
+
+
+// support functions for the floating point Drawline algorythm
+// fractional part of x
+float fpart(float x)
+{
+    return (x - floor(x));
+}
+
+float rfpart(float x)
+{
+    return (1 - fpart(x));
+}
+
+
+// these are equivalent to the above but are based on integer maths with a fix position decimal at the 16bit boundary
+unsigned int fpartI(int x)      // x is 16 bits to 1
+{
+    return ((unsigned int)((x&0xffff)>>8));
+}
+
+unsigned int rfpartI(int x)     // x is 16 bits to 1
+{
+    return (256 - (unsigned int)((x&0xffff)>>8));
+}
+
+
+// python easy call for access using shorts.  See below for actual algorythm
+void DrawLineAA(short x0,short y0, short x1, short y1, unsigned short colour)
+{
+    DrawLineFloat(x0, y0, x1, y1,colour, false);
+}
+
+
+//version of the line drawing routine that uses floating point mathematics including anti aliasing
+// this code is based on Xiaolin Wu's algorythm, details of which can be found at:
+// https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
+// this is slower than the raw integer version shown below, but does look much cleaner on the display
+void DrawLineFloat(float x0,float y0, float x1, float y1, unsigned short colour,bool fill)
+{
+bool steep =false;
+float temp;
+float deltax,deltay;
+int gradient ;
+float xend,yend;
+float xgap;
+float xpxl1,ypxl1,xpxl2,ypxl2;
+int x;
+int intery;
+
+    if(abs(y1 - y0) > abs(x1 - x0))
+        steep = true;
+    
+    if (steep)      // Y or X as the main direction Steep = true if more Y than X change
+    {
+        temp = y0;
+        y0 = x0;
+        x0 = temp;
+
+        temp = y1;
+        y1 = x1;
+        x1 = temp;
+    }
+
+    if (x0 > x1) 
+    {
+        temp = x1;
+        x1 = x0;
+        x0 = temp;
+
+        temp = y1;
+        y1 = y0;
+        y0 = temp;
+    }
+    
+    deltax = x1 - x0;
+    deltay = y1 - y0;
+
+    if (deltax == 0.0)
+        gradient  = 65536;      // 16 bit nominal 1.0
+    else
+        gradient  = (int)((deltay/deltax)*65536.0);
+
+    // handle first endpoint
+    xend = round(x0);
+    yend = y0 + ((float)gradient)/65536.0  * (xend - x0);
+    xgap = rfpart(x0 + 0.5);
+    xpxl1 = xend;     // this will be used in the main loop
+    ypxl1 = floor(yend);
+
+    yend = yend*65536;
+    if (steep)
+    {
+        updatePixel(ypxl1,   xpxl1,  colour, rfpartI(yend) * xgap);
+        updatePixel(ypxl1+1, xpxl1,  colour, fpartI (yend) * xgap);
+    }
+    else
+    {
+        updatePixel(xpxl1, ypxl1  ,  colour, rfpartI(yend) * xgap);
+        updatePixel(xpxl1, ypxl1+1,  colour, fpartI(yend) * xgap);
+    }
+    intery = (int)(yend + gradient); // first y-intersection for the main loop
+    
+    // handle second endpoint
+    xend = round(x1);
+    yend = y1 + ((float)gradient)/65536.0 * (xend - x1);
+    xgap = fpart(x1 + 0.5);
+    xpxl2 = xend; //this will be used in the main loop
+    ypxl2 = floor(yend);
+
+    yend = yend*65536;
+    if (steep)
+    {
+        updatePixel(ypxl2  , xpxl2, colour, rfpartI(yend) * xgap);
+        updatePixel(ypxl2+1, xpxl2, colour, fpartI(yend) * xgap);
+    }
+    else
+    {
+        updatePixel(xpxl2, ypxl2,   colour, rfpartI(yend) * xgap);
+        updatePixel(xpxl2, ypxl2+1, colour, fpartI(yend) * xgap);
+    }
+    
+    if (fill)
+    {
+        // main loop  but for fill case
+        if (steep)
+        {
+            //printf("steep line\n");
+            for (x = xpxl1 + 1; x < xpxl2; x++)
+            {
+                SetPixel(intery>>16  , x, colour);
+                SetPixel((intery>>16)+1, x, colour);
+                intery = intery + gradient;
+            }
+        }
+        else
+        {
+            //printf("not steep line\n");
+            for (x = xpxl1 + 1;x < xpxl2; x++)
+            { 
+                SetPixel(x, intery>>16,  colour);
+                SetPixel(x, (intery>>16)+1,colour);
+                intery = intery + gradient;
+            } 
+        
+        }
+    }
+    else
+    {
+        // main loop  but for single line case
+        if (steep)
+        {
+            //printf("steep line\n");
+            for (x = xpxl1 + 1; x < xpxl2; x++)
+            {
+                updatePixel(intery>>16  , x, colour, rfpartI(intery));
+                updatePixel((intery>>16)+1, x, colour, fpartI(intery));
+                intery = intery + gradient;
+            }
+        }
+        else
+        {
+            //printf("not steep line\n");
+            for (x = xpxl1 + 1;x < xpxl2; x++)
+            { 
+                updatePixel(x, intery>>16,  colour, rfpartI(intery));
+                updatePixel(x, (intery>>16)+1,colour, fpartI(intery));
+                intery = intery + gradient;
+            } 
+        
+        }
+    }
 }
 
 
 // DrawLine
 // simple line drawing in the render space
 // allows for lines on and off screen
-void DrawLine(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour)
+// Bresenham's Line Drawing Algorithm is used for this, which provides a fast integer only drawing routine
+// https://www.includehelp.com/computer-graphics/bresenhams-line-drawing-algorithm.aspx explains the logic behind it
+// this has however been optimised for direction and for X or Y priority
+void DrawLineIntMaths(short Xstart,short Ystart, short Xend, short Yend, unsigned short colour)
 {
-    short Xerr=0;
-    short Yerr=0;
-    short distance=0;
-    short delta_x=Xend-Xstart; 
-    short delta_y=Yend-Ystart;
-    short uRow=Xstart;
-    short uCol=Ystart;
-    short incx,incy;
-    if(delta_x>0)
-      incx=1;
-    else 
-        if (delta_x==0)
-            incx=0;
-        else
-        {
-            incx=-1;
-            delta_x=-delta_x;
-        }
+short Xerr,Yerr;
+short Xdelta,Ydelta,Step;
+short incX,incXY,incY;
+short x,y;
+short dir;
 
-    if(delta_y>0)
-        incy=1;
-    else
-        if (delta_y==0)
-            incy=0;
-        else
-        {
-            incy=-1;
-            delta_y=-delta_y;
-        }
 
-    if(delta_x>delta_y)
-        distance=delta_x;
-    else
-        distance=delta_y;
-    for (int t=0;t<=(distance+1);t++)
+    //printf("OLD CODE\n");
+    Xdelta = Xend-Xstart;
+    Ydelta = Yend-Ystart;
+
+
+    if (abs(Xdelta)>abs(Ydelta))
     {
-        SetPixel(uRow,uCol,colour);
-        Xerr+=delta_x;
-        Yerr+=delta_y;
-        if(Xerr>distance)
+        // X direction is larger or equal  
+
+        // make sure the lines always go from lowX to high X
+        // makes the rest of the code simpler
+        if(Xstart>Xend)
         {
-            Xerr-=distance;
-            uRow+=incx;
+            short temp=Xend;
+            Xend = Xstart;
+            Xstart=temp;
+
+            temp = Yend;
+            Yend= Ystart;
+            Ystart = temp;
         }
-        if(Yerr>distance)
+
+        Xdelta = Xend-Xstart;
+        Ydelta = Yend-Ystart;
+
+        x = Xstart;
+        y = Ystart;
+
+        if (Yend<Ystart)
         {
-            Yerr-=distance;
-            uCol+=incy;
+            dir =-1;
+            Ydelta = -Ydelta;
+        }
+        else
+        {
+            dir=1;       
+        }
+        incX  = 2 * Ydelta;
+        incXY = 2 * (Ydelta - Xdelta);
+        Step  = 2 * Ydelta - Xdelta;
+
+        // draw the first pixel and possibly the only one
+        SetPixel(x,y,colour);
+
+        while (x<Xend)
+        {
+            if (Step<=0)
+            {
+                Step+=incX;
+                x++;
+            }
+            else
+            {
+                Step+=incXY;
+                x++;
+                y+=dir;
+            }
+            SetPixel(x,y,colour);
+        }
+    }
+    else
+    {
+        // y Direction is the mayority
+        if(Ystart>Yend)
+        {
+            short temp=Xend;
+            Xend = Xstart;
+            Xstart=temp;
+
+            temp = Yend;
+            Yend= Ystart;
+            Ystart = temp;
+        }
+
+        Xdelta = Xend-Xstart;
+        Ydelta = Yend-Ystart;
+
+        x = Xstart;
+        y = Ystart;
+
+        if (Xend<Xstart)
+        {
+            dir =-1;
+            Xdelta = -Xdelta;
+        }
+        else
+        {
+            dir=1;       
+        }
+        incY  = 2 * Xdelta;
+        incXY = 2 * (Xdelta - Ydelta);
+        Step  = 2 * Xdelta - Ydelta;
+
+        // draw the first pixel and possibly the only one
+        SetPixel(x,y,colour);
+
+        while (y<Yend)
+        {
+            if (Step<=0)
+            {
+                Step+=incY;
+                y++;
+            }
+            else
+            {
+                Step+=incXY;
+                y++;
+                x+=dir;
+            }
+            SetPixel(x,y,colour);
         }
     }
 }
+
+// routines for drawing lines wider than 1 pixel
+// the first provides a fast integer parameter version which is good for calling in python
+// the second is the one that does the actual work.
+void DrawLineWideAA(short x0,short y0, short x1, short y1, unsigned short colour,unsigned short width)
+{
+    DrawLineWideFloat (x0,y0 , x1,y1, colour, width);
+}
+
+void  DrawLineWideFloat(float x0,float y0, float x1, float y1, unsigned short colour,unsigned short width)
+{                            
+float dx,dy,sx,sy;
+float length,err;
+float xoff,yoff;
+float xend,yend;
+float step = 1.5;
+
+    dx = (x1-x0);
+    dy = (y1-y0);
+
+    length = sqrt(dx*dx+dy*dy);        
+
+    step = (abs(dx) + abs (dy))/length;                   
+
+    if (width <= 1 || length == 0) 
+    {
+        DrawLineFloat(x0,y0, x1,y1,colour,false);                    
+    }
+    else
+    {
+        dx = dx/(length) / step;
+        dy = -dy/(length) / step;    //flip by 90deg
+
+        width = width * step;
+
+        xoff = -dy*(width)/2 +dy;
+        yoff = -dx*(width)/2 +dx;
+        for (int line = 0;line<(width-1);line++)
+        {
+            //DrawLineFloat(x0+xoff,y0+yoff,x1+xoff,y1+yoff,colour);
+            DrawLineFloat(x0+xoff,y0+yoff,x1+xoff,y1+yoff,colour,true);
+            xoff += dy;
+            yoff += dx;
+        }
+        // run antialiased edges
+        xoff = -dy*(width)/2;
+        yoff = -dx*(width)/2;
+        
+        xend = +dy*(width)/2;
+        yend = +dx*(width)/2;
+        //draw long edges
+        DrawLineFloat(x0+xoff,y0+yoff,x1+xoff,y1+yoff,colour,false);
+        DrawLineFloat(x0+xend,y0+yend,x1+xend,y1+yend,colour,false);
+
+        //DrawLineFloat(x0+xoff,y0+yoff,x0+xend,y0+yend,colour,false);
+        //DrawLineFloat(x1+xoff,y1+yoff,x1+xend,y1+yend,colour,false);
+    
+   }
+}
+
+
 
 // ScreenUpdate
 // routine to do the write to the screen as a memory dump from the render space

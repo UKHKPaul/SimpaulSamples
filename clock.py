@@ -32,6 +32,9 @@ if (circularDisp.initBCMHardware()):
   # load the BMP image data directly
   circularDisp.RGB240x240Direct(data,1)
 
+  # use this instead if you want a flat colour screen
+  #circularDisp.clearScreenDirect(0xFFFF)
+
   # then tell the driver to save the current image as the reference
   circularDisp.SetRefernceImage()
 
@@ -73,26 +76,16 @@ if (circularDisp.initBCMHardware()):
       # as I used a white clock face, then the main hands will be black
 
       handcolour = circularDisp.RGBto16bit(0,0,0)   #black
-      # these lines give a thick centre with a single pixel point
-      circularDisp.DrawLine(120,120,(int)(Hrx),(int)(Hry),handcolour)
-      circularDisp.DrawLine(121,120,(int)(Hrx),(int)(Hry),handcolour)
-      circularDisp.DrawLine(119,120,(int)(Hrx),(int)(Hry),handcolour)
-      circularDisp.DrawLine(120,121,(int)(Hrx),(int)(Hry),handcolour)
-      circularDisp.DrawLine(120,119,(int)(Hrx),(int)(Hry),handcolour)
 
-      circularDisp.DrawLine(120,120,(int)(Minx),(int)(Miny),handcolour)
-      circularDisp.DrawLine(121,120,(int)(Minx),(int)(Miny),handcolour)
-      circularDisp.DrawLine(119,120,(int)(Minx),(int)(Miny),handcolour)
-      circularDisp.DrawLine(120,121,(int)(Minx),(int)(Miny),handcolour)
-      circularDisp.DrawLine(120,119,(int)(Minx),(int)(Miny),handcolour)
+      circularDisp.DrawLineWideShort(120,120,(int)(Hrx),(int)(Hry),handcolour,20)
+
+      circularDisp.DrawLineWideShort(120,120,(int)(Minx),(int)(Miny),handcolour,10)
+      
 
       # for the second hand, use a Blue hand colour but make both centre and end wide
       handcolour = circularDisp.RGBto16bit(0,0,255)   #Blue
-      circularDisp.DrawLine(120,120,(int)(Secx),(int)(Secy),handcolour)
-      circularDisp.DrawLine(121,120,(int)(Secx)+1,(int)(Secy),handcolour)
-      circularDisp.DrawLine(119,120,(int)(Secx)-1,(int)(Secy),handcolour)
-      circularDisp.DrawLine(120,121,(int)(Secx),(int)(Secy)+1,handcolour)
-      circularDisp.DrawLine(120,119,(int)(Secx),(int)(Secy)-1,handcolour)
+      circularDisp.DrawLineWideShort(120,120,(int)(Secx),(int)(Secy),handcolour,6)
+
 
       # tell the driver to write the image data to the screen
       circularDisp.ScreenUpdate()
