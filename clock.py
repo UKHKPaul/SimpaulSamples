@@ -32,7 +32,7 @@ if (circularDisp.initBCMHardware()):
   # load the BMP image data directly
   circularDisp.RGB240x240Direct(data,1)
 
-  # use this instead if you want a flat colour screen
+  # use this instead if you want a flat colour screens
   #circularDisp.clearScreenDirect(0xFFFF)
 
   # then tell the driver to save the current image as the reference
@@ -77,14 +77,14 @@ if (circularDisp.initBCMHardware()):
 
       handcolour = circularDisp.RGBto16bit(0,0,0)   #black
 
-      circularDisp.DrawLineWideShort(120,120,(int)(Hrx),(int)(Hry),handcolour,20)
+      circularDisp.DrawLineWideAA(120,120,(int)(Hrx),(int)(Hry),handcolour,20)
 
-      circularDisp.DrawLineWideShort(120,120,(int)(Minx),(int)(Miny),handcolour,10)
+      circularDisp.DrawLineWideAA(120,120,(int)(Minx),(int)(Miny),handcolour,10)
       
 
       # for the second hand, use a Blue hand colour but make both centre and end wide
       handcolour = circularDisp.RGBto16bit(0,0,255)   #Blue
-      circularDisp.DrawLineWideShort(120,120,(int)(Secx),(int)(Secy),handcolour,6)
+      circularDisp.DrawLineWideAA(120,120,(int)(Secx),(int)(Secy),handcolour,6)
 
 
       # tell the driver to write the image data to the screen
